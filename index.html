@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Project Mila</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      background: #0d0033;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      color: #f0d0ff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    header {
+      text-align: center;
+      padding: 60px 20px 40px;
+    }
+
+    header h1 {
+      font-size: clamp(2.2rem, 6vw, 4rem);
+      background: linear-gradient(135deg, #ff80ff, #c084fc, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: -0.5px;
+    }
+
+    header p {
+      margin-top: 12px;
+      font-size: clamp(0.95rem, 2.5vw, 1.15rem);
+      color: #b085c8;
+      max-width: 480px;
+      margin-inline: auto;
+      line-height: 1.6;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 28px;
+      padding: 20px 40px 80px;
+      width: 100%;
+      max-width: 1100px;
+    }
+
+    .card {
+      background: linear-gradient(145deg, #1e0044, #2d0055);
+      border: 1px solid rgba(200, 100, 255, 0.2);
+      border-radius: 20px;
+      overflow: hidden;
+      text-decoration: none;
+      color: inherit;
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+    }
+
+    .card:hover {
+      transform: translateY(-6px);
+      box-shadow: 0 12px 40px rgba(180, 50, 255, 0.35);
+      border-color: rgba(200, 100, 255, 0.5);
+    }
+
+    .card-thumb {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: linear-gradient(135deg, #1a0044, #5a1080);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 4rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card-thumb::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at 50% 120%, rgba(218, 112, 214, 0.25) 0%, transparent 70%);
+    }
+
+    .card-body {
+      padding: 22px 24px 26px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex: 1;
+    }
+
+    .card-body h2 {
+      font-size: 1.25rem;
+      color: #f0d0ff;
+    }
+
+    .card-body p {
+      font-size: 0.9rem;
+      color: #a070c0;
+      line-height: 1.55;
+    }
+
+    .play-btn {
+      display: inline-block;
+      margin-top: auto;
+      padding: 10px 22px;
+      background: linear-gradient(135deg, #9333ea, #c026d3);
+      color: #fff;
+      border-radius: 50px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      text-align: center;
+      letter-spacing: 0.3px;
+      transition: opacity 0.15s;
+      align-self: flex-start;
+    }
+
+    .play-btn:hover { opacity: 0.85; }
+
+    footer {
+      margin-top: auto;
+      padding: 24px;
+      font-size: 0.8rem;
+      color: #5a3870;
+      text-align: center;
+    }
+
+    footer a { color: #9060b0; text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>✨ Project Mila</h1>
+  <p>A small collection of games made with love — simple enough for tiny hands, fun enough for everyone.</p>
+</header>
+
+<main class="grid">
+
+  <a class="card" href="PrincessRunner/index.html">
+    <div class="card-thumb">👸</div>
+    <div class="card-body">
+      <h2>Princess Runner</h2>
+      <p>Help the princess collect stars, snowflakes, and crowns as she runs through an enchanted night sky. Press Space — or tap the screen!</p>
+      <span class="play-btn">▶ Play</span>
+    </div>
+  </a>
+
+  <!-- Add future games here following the same card pattern:
+  <a class="card" href="GameName/index.html">
+    <div class="card-thumb">🎮</div>
+    <div class="card-body">
+      <h2>Game Title</h2>
+      <p>Short description.</p>
+      <span class="play-btn">▶ Play</span>
+    </div>
+  </a>
+  -->
+
+</main>
+
+<footer>
+  Built by <a href="https://github.com/johanmelkersson" target="_blank">Johan Melkersson</a>
+</footer>
+
+</body>
+</html>

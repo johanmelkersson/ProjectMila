@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prinsessans äventyr</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0d0020;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+      border-radius: 16px;
+      box-shadow: 0 0 50px rgba(180, 50, 255, 0.4);
+      touch-action: none;
+    }
+  </style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+canvas.width = 800;
+canvas.height = 450;
+
+// Scale canvas to fit window while keeping proportions
+function resize() {
+  const aspect = canvas.width / canvas.height;
+  let w = window.innerWidth * 0.96;
+  let h = w / aspect;
+  if (h > window.innerHeight * 0.96) { h = window.innerHeight * 0.96; w = h * aspect; }
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── Audio (Web Audio API — no files needed) ─────────────────────────────────
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function playTone(freq, type, duration, vol = 0.25, startDelay = 0) {
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.type = type;
+  const t = audioCtx.currentTime + startDelay;
+  osc.frequency.setValueAtTime(freq, t);
+  osc.frequency.exponentialRampToValueAtTime(freq * 0.6, t + duration);
+  gain.gain.setValueAtTime(vol, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
+  osc.start(t);
+  osc.stop(t + duration);
+}
+
+function playJumpSound() {
+  playTone(300, 'sine', 0.12, 0.15);
+  playTone(520, 'sine', 0.10, 0.10, 0.04);
+}
+
+function playCollectSound(pts) {
+  // Nicer chord the more points the item is worth
+  const notes = [523, 659, 784, 1047]; // C5 E5 G5 C6
+  const count = pts >= 5 ? 4 : pts >= 2 ? 3 : 2;
+  for (let i = 0; i < count; i++) playTone(notes[i], 'sine', 0.22, 0.13, i * 0.07);
+}
+
+const isMobile = window.matchMedia('(pointer: coarse)').matches;
+
+// ─── Layout constants ────────────────────────────────────────────────────────
+const GY = 370;          // y of ground surface
+const PW = 50, PH = 60;  // player width/height
+
+// ─── Physics constants ───────────────────────────────────────────────────────
+const GRAVITY    = 0.55;
+const JUMP_FORCE = -13;   // negative = upward
+const SCROLL     = 3;     // pixels per frame the world moves left
+
+// ─── Player ──────────────────────────────────────────────────────────────────
+const player = {
+  x: 120,
+  y: GY - PH,    // y = top of sprite; feet sit at GY when grounded
+  vy: 0,
+  w: PW,
+  h: PH,
+  grounded: true,
+  emoji: '👸',
+
+  // ── Sprite hook ──────────────────────────────────────────────────────────
+  // To replace the emoji with an image file:
+  //   player.sprite = new Image();
+  //   player.sprite.src = 'sprites/princess.png';   // 50×60 px recommended
+  sprite: null,
+};
+
+// ─── Game state ───────────────────────────────────────────────────────────────
+let score       = 0;
+let scoreFlash  = 0;   // frames to flash the score
+let started     = false;
+let frame       = 0;
+
+// ─── Input ────────────────────────────────────────────────────────────────────
+function triggerJump() {
+  audioCtx.resume(); // browsers block audio until user gesture
+  if (!started) started = true;
+  if (player.grounded) {
+    player.vy       = JUMP_FORCE;
+    player.grounded = false;
+    spawnBurst(player.x + player.w / 2, GY, '#CC88FF', 8);
+    playJumpSound();
+  }
+}
+
+window.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); triggerJump(); } });
+canvas.addEventListener('pointerdown', triggerJump); // touch / click fallback
+
+// ─── Collectible types ────────────────────────────────────────────────────────
+const TYPES = [
+  {
+    emoji: '⭐', pts: 1, color: '#FFD700',
+    // sprite: (() => { const i = new Image(); i.src = 'sprites/star.png'; return i; })(),
+    sprite: null,
+  },
+  {
+    emoji: '❄️', pts: 2, color: '#88CCFF',
+    // sprite: (() => { const i = new Image(); i.src = 'sprites/snowflake.png'; return i; })(),
+    sprite: null,
+  },
+  {
+    emoji: '👑', pts: 5, color: '#FFD700',
+    // sprite: (() => { const i = new Image(); i.src = 'sprites/crown.png'; return i; })(),
+    sprite: null,
+  },
+];
+
+// Heights collectibles spawn at (pixels above ground). Must be reachable with one jump.
+// Max jump height ≈ JUMP_FORCE² / (2 × GRAVITY) ≈ 153 px.
+const HEIGHTS = [0, 70, 130];
+
+let collectibles = [];
+let spawnTimer   = 0;
+let spawnInterval = 80;
+
+function spawnCollectible() {
+  const type = TYPES[Math.floor(Math.random() * TYPES.length)];
+  const CW = 40, CH = 40;
+  const h  = HEIGHTS[Math.floor(Math.random() * HEIGHTS.length)];
+  collectibles.push({
+    x: canvas.width + 40,
+    y: GY - CH - h,
+    w: CW, h: CH,
+    emoji: type.emoji,
+    pts:   type.pts,
+    color: type.color,
+    sprite: type.sprite,
+    gone: false,
+  });
+}
+
+// ─── Particles ────────────────────────────────────────────────────────────────
+let particles = [];
+
+function spawnBurst(cx, cy, color, count = 12) {
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2 + Math.random() * 0.4;
+    const speed = 2 + Math.random() * 4;
+    particles.push({
+      x: cx, y: cy,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 1.5,
+      life: 1,
+      decay: 0.024 + Math.random() * 0.024,
+      color,
+      r: 5 + Math.random() * 6,
+    });
+  }
+}
+
+// ─── Background elements ──────────────────────────────────────────────────────
+const STARS = Array.from({ length: 45 }, () => ({
+  x: Math.random() * 800,
+  y: Math.random() * 220,
+  r: Math.random() * 1.5 + 0.4,
+  phase: Math.random() * Math.PI * 2,
+}));
+
+const CLOUDS = Array.from({ length: 5 }, (_, i) => ({
+  x: i * 180 + 30,
+  y: 55 + Math.random() * 80,
+  size: 32 + Math.random() * 28,
+  speed: 0.35 + Math.random() * 0.3,
+}));
+
+// ─── Update ───────────────────────────────────────────────────────────────────
+function update() {
+  frame++;
+
+  // Player gravity
+  if (!player.grounded) {
+    player.vy += GRAVITY;
+    player.y  += player.vy;
+    if (player.y >= GY - player.h) {
+      player.y    = GY - player.h;
+      player.vy   = 0;
+      player.grounded = true;
+    }
+  }
+
+  // Move clouds
+  CLOUDS.forEach(c => { c.x -= c.speed; if (c.x < -150) c.x = canvas.width + 150; });
+
+  // Spawn collectibles only after the game starts
+  if (started) {
+    spawnTimer++;
+    if (spawnTimer >= spawnInterval) {
+      spawnTimer    = 0;
+      spawnInterval = 55 + Math.floor(Math.random() * 75);
+      spawnCollectible();
+    }
+  }
+
+  // Move collectibles + collision
+  collectibles.forEach(c => {
+    c.x -= SCROLL;
+    if (c.gone) return;
+    // Slightly forgiving hitbox (shrink 8 px per side)
+    const px = player.x + 8, pw = player.w - 16;
+    const py = player.y + 8, ph = player.h - 16;
+    if (px < c.x + c.w && px + pw > c.x && py < c.y + c.h && py + ph > c.y) {
+      c.gone = true;
+      score += c.pts;
+      scoreFlash = 28;
+      spawnBurst(c.x + c.w / 2, c.y + c.h / 2, c.color, 14);
+      playCollectSound(c.pts);
+    }
+  });
+  collectibles = collectibles.filter(c => !c.gone && c.x > -60);
+
+  // Update particles
+  particles.forEach(p => {
+    p.x   += p.vx;
+    p.y   += p.vy;
+    p.vy  += 0.14;
+    p.life -= p.decay;
+  });
+  particles = particles.filter(p => p.life > 0);
+
+  if (scoreFlash > 0) scoreFlash--;
+}
+
+// ─── Draw helpers ─────────────────────────────────────────────────────────────
+function drawEmoji(em, cx, cy, size) {
+  ctx.save();
+  ctx.font = `${size}px serif`;
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(em, cx, cy);
+  ctx.restore();
+}
+
+// Draws any entity that has { x, y, w, h, emoji, sprite }.
+// When sprite is set and loaded → uses drawImage; otherwise falls back to emoji.
+function drawEntity(e) {
+  if (e.sprite && e.sprite.complete && e.sprite.naturalWidth > 0) {
+    ctx.drawImage(e.sprite, e.x, e.y, e.w, e.h);
+  } else {
+    drawEmoji(e.emoji, e.x + e.w / 2, e.y + e.h / 2, e.w * 0.85);
+  }
+}
+
+// ─── Draw ─────────────────────────────────────────────────────────────────────
+function draw() {
+  // Sky gradient
+  const sky = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  sky.addColorStop(0,   '#0d0033');
+  sky.addColorStop(0.65,'#3d0066');
+  sky.addColorStop(1,   '#7B2D8B');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Twinkling stars
+  STARS.forEach(s => {
+    const alpha = 0.35 + 0.65 * Math.abs(Math.sin(s.phase + frame * 0.028));
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle   = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  // Soft clouds
+  ctx.fillStyle = 'rgba(255, 180, 255, 0.22)';
+  CLOUDS.forEach(c => {
+    ctx.beginPath();
+    ctx.arc(c.x,                      c.y,                c.size,       0, Math.PI * 2);
+    ctx.arc(c.x + c.size * 0.65,  c.y - c.size * 0.28,  c.size * 0.65, 0, Math.PI * 2);
+    ctx.arc(c.x - c.size * 0.65,  c.y - c.size * 0.18,  c.size * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Ground fill
+  const gGrad = ctx.createLinearGradient(0, GY, 0, canvas.height);
+  gGrad.addColorStop(0, '#8B2FC9');
+  gGrad.addColorStop(1, '#2d0044');
+  ctx.fillStyle = gGrad;
+  ctx.fillRect(0, GY, canvas.width, canvas.height - GY);
+
+  // Ground shimmer line
+  ctx.save();
+  ctx.strokeStyle = '#DA70D6';
+  ctx.lineWidth   = 2.5;
+  ctx.shadowColor = '#FF80FF';
+  ctx.shadowBlur  = 10;
+  ctx.beginPath();
+  ctx.moveTo(0, GY);
+  ctx.lineTo(canvas.width, GY);
+  ctx.stroke();
+  ctx.restore();
+
+  // Collectibles
+  collectibles.forEach(drawEntity);
+
+  // Player
+  drawEntity(player);
+
+  // Particles
+  particles.forEach(p => {
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle   = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  // Score (bounces slightly when you collect something)
+  const scale = scoreFlash > 0 ? 1 + (scoreFlash / 28) * 0.25 : 1;
+  ctx.save();
+  ctx.translate(56, 34);
+  ctx.scale(scale, scale);
+  ctx.font      = 'bold 30px sans-serif';
+  ctx.fillStyle = scoreFlash > 0 ? '#FFFF88' : '#FFD700';
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`✨ ${score}`, 0, 0);
+  ctx.restore();
+
+  // "Press space" prompt before game starts
+  if (!started) {
+    const pulse = 0.65 + 0.35 * Math.sin(frame * 0.07);
+    ctx.globalAlpha = pulse;
+    ctx.font      = 'bold 26px sans-serif';
+    ctx.fillStyle = '#FFD0FF';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(isMobile ? 'Tryck var som helst för att hoppa! 🌟'
+                          : 'Tryck MELLANSLAG för att hoppa! 🌟', canvas.width / 2, canvas.height / 2 - 10);
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ─── Game loop ────────────────────────────────────────────────────────────────
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>
