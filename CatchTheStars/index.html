@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="sv">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Fånga Stjärnorna</title>
+  <title>Catch the Stars</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -27,7 +27,7 @@
       position: fixed;
       top: 14px;
       right: 14px;
-      z-index: 5;
+      z-index: 9;
       background: rgba(30, 0, 60, 0.75);
       border: 1px solid rgba(200, 100, 255, 0.35);
       border-radius: 50%;
@@ -42,6 +42,57 @@
       transition: background 0.15s, transform 0.15s;
     }
     #home-btn:hover { background: rgba(80, 0, 120, 0.9); transform: scale(1.1); }
+
+    /* ── Difficulty selection screen ── */
+    #diff-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(10, 0, 28, 0.78);
+      backdrop-filter: blur(3px);
+    }
+    .diff-card {
+      background: linear-gradient(155deg, rgba(52, 0, 90, 0.97), rgba(22, 0, 46, 0.97));
+      border: 2px solid rgba(210, 100, 255, 0.45);
+      border-radius: 24px;
+      padding: 30px 28px 26px;
+      text-align: center;
+      color: #f0d0ff;
+      font-family: sans-serif;
+      box-shadow: 0 0 60px rgba(140, 0, 255, 0.35), inset 0 0 32px rgba(100, 0, 180, 0.1);
+      max-width: 370px;
+      width: 90vw;
+    }
+    .diff-card h1 { font-size: 1.65rem; margin-bottom: 4px; }
+    .diff-card p  { font-size: 0.95rem; color: #b880f0; margin-bottom: 22px; }
+    .diff-btns {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .diff-btns button {
+      background: rgba(100, 0, 180, 0.55);
+      border: 2px solid rgba(210, 110, 255, 0.5);
+      border-radius: 16px;
+      color: #fff;
+      font-size: 1.1rem;
+      line-height: 1.55;
+      padding: 14px 10px;
+      min-height: 74px;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+    }
+    .diff-btns button:hover {
+      background: rgba(160, 0, 240, 0.78);
+      transform: scale(1.06);
+      box-shadow: 0 0 20px rgba(200, 80, 255, 0.45);
+    }
+    .diff-btns button:active { transform: scale(0.96); }
+
+    /* ── Portrait overlay ── */
     #rotate-overlay {
       display: none;
       position: fixed;
@@ -63,18 +114,34 @@
 <body>
 <a id="home-btn" href="../index.html" title="Back to Project Mila">🏠</a>
 <canvas id="game"></canvas>
+
+<div id="diff-screen">
+  <div class="diff-card">
+    <h1>⭐ Catch the Stars</h1>
+    <p>Choose difficulty</p>
+    <div class="diff-btns">
+      <button data-d="practice">🌸<br>Practice</button>
+      <button data-d="easy">⭐<br>Easy</button>
+      <button data-d="medium">🌟<br>Medium</button>
+      <button data-d="hard">👑<br>Hard</button>
+    </div>
+  </div>
+</div>
+
 <div id="rotate-overlay">
   <div class="icon">📱↔️</div>
   <p>Rotate your device<br>to play! ⭐✨</p>
 </div>
+
 <script>
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
+const ctx    = canvas.getContext('2d');
 canvas.width  = 800;
 canvas.height = 450;
 
 const isMobile = window.matchMedia('(pointer: coarse)').matches;
 
+// ─── Viewport / resize ────────────────────────────────────────────────────────
 function getViewport() {
   if (window.visualViewport) return { w: window.visualViewport.width, h: window.visualViewport.height };
   return { w: window.innerWidth, h: window.innerHeight };
@@ -97,15 +164,13 @@ function checkOrientation() {
 }
 
 function onResize() { resize(); checkOrientation(); }
-
 window.addEventListener('resize', onResize);
 window.addEventListener('orientationchange', () => setTimeout(onResize, 120));
 if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
-
 resize();
 checkOrientation();
 
-// ─── Audio (Web Audio API — no files needed) ─────────────────────────────────
+// ─── Audio (Web Audio API — no files needed) ──────────────────────────────────
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
 function playTone(freq, type, duration, vol = 0.25, startDelay = 0) {
@@ -129,10 +194,30 @@ function playCollectSound(pts) {
   for (let i = 0; i < count; i++) playTone(notes[i], 'sine', 0.22, 0.13, i * 0.07);
 }
 
-// ─── Layout constants ────────────────────────────────────────────────────────
-const GY = 400;           // y of ground / basket resting surface
-const PW = 75, PH = 55;   // basket width / height
-const SPEED = 6;          // px per frame at 60 fps
+// ─── Difficulty ───────────────────────────────────────────────────────────────
+const DIFFICULTIES = {
+  practice: { fallSpeed: 1.0, spawnInterval: 100, allTypes: false, speedVariance: 0   },
+  easy:     { fallSpeed: 2.5, spawnInterval: 85,  allTypes: true,  speedVariance: 0.5 },
+  medium:   { fallSpeed: 3.0, spawnInterval: 65,  allTypes: true,  speedVariance: 1.0 },
+  hard:     { fallSpeed: 3.5, spawnInterval: 45,  allTypes: true,  speedVariance: 1.5 },
+};
+let config = null; // set when player picks a difficulty — nothing runs before this
+
+document.querySelectorAll('#diff-screen button[data-d]').forEach(btn => {
+  btn.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    audioCtx.resume();
+    config        = DIFFICULTIES[btn.dataset.d];
+    baseInterval  = config.spawnInterval; // mutable float — decreases over time
+    spawnInterval = config.spawnInterval;
+    document.getElementById('diff-screen').style.display = 'none';
+  });
+});
+
+// ─── Layout constants ─────────────────────────────────────────────────────────
+const GY    = 400;        // y of ground / basket resting surface
+const PW    = 75, PH = 55; // basket width / height
+const SPEED = 6;          // horizontal px per frame at 60 fps
 
 // ─── Player (basket) ─────────────────────────────────────────────────────────
 const player = {
@@ -141,39 +226,44 @@ const player = {
   w: PW,
   h: PH,
   emoji: '🧺',
-  catchAnim: 0,   // frames remaining of catch-pop animation
-
-  // ── Sprite hook ──────────────────────────────────────────────────────────
+  catchAnim: 0, // frames remaining of catch-pop scale animation
+  // ── Sprite hook ─────────────────────────────────────────────────────────
   // player.sprite = new Image();
   // player.sprite.src = 'sprites/basket.png'; // 75×55 px recommended
   sprite: null,
 };
 
 // ─── Game state ───────────────────────────────────────────────────────────────
-let score         = 0;
-let scoreFlash    = 0;
-let started       = false;
-let frame         = 0;
-let lastTime      = null;
-let items         = [];
-let particles     = [];
+let score      = 0;
+let scoreFlash = 0;
+let started    = false; // true after first movement; gates item spawning + start prompt
+let frame      = 0;     // increments only while config is active; drives star twinkle
+let lastTime   = null;
+
+let items     = [];
+let particles = [];
+
+// spawnInterval: frames until next spawn. baseInterval soft-decreases over
+// time (harder as game goes on) but never below 30 frames (~0.5 s at 60 fps).
+let spawnInterval = 0;
+let baseInterval  = 0;
 let spawnTimer    = 0;
-let spawnInterval = 90; // frames between spawns
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 const keys = {};
 
 window.addEventListener('keydown', e => {
   keys[e.code] = true;
-  if (!started && (e.code === 'ArrowLeft' || e.code === 'ArrowRight' ||
-                   e.code === 'KeyA'      || e.code === 'KeyD')) {
+  if (!config) return;
+  if (!started && (e.code === 'ArrowLeft'  || e.code === 'ArrowRight' ||
+                   e.code === 'KeyA'       || e.code === 'KeyD')) {
     audioCtx.resume();
     started = true;
   }
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 
-// Multi-touch pointer tracking: each pointer maps to 'left' or 'right'
+// Multi-touch: each pointerId maps to the side it started on
 const activePointers = new Map();
 let touchLeft = false, touchRight = false;
 
@@ -186,6 +276,7 @@ function updateTouchDirs() {
 }
 
 canvas.addEventListener('pointerdown', e => {
+  if (!config) return; // difficulty not yet chosen — ignore canvas taps
   const rect = canvas.getBoundingClientRect();
   const cx   = (e.clientX - rect.left) / rect.width * canvas.width;
   activePointers.set(e.pointerId, cx < canvas.width / 2 ? 'left' : 'right');
@@ -197,32 +288,37 @@ canvas.addEventListener('pointerup',     e => { activePointers.delete(e.pointerI
 canvas.addEventListener('pointercancel', e => { activePointers.delete(e.pointerId); updateTouchDirs(); });
 
 // ─── Collectible types ────────────────────────────────────────────────────────
+// allTypes: false (practice) → only TYPES[0] (⭐) ever spawns.
+// allTypes: true  → all three types with their point values.
 const TYPES = [
   {
     emoji: '⭐', pts: 1, color: '#FFD700',
-    minSpeed: 2.0, maxSpeed: 3.5,
     // sprite: (() => { const i = new Image(); i.src = 'sprites/star.png'; return i; })(),
     sprite: null,
   },
   {
     emoji: '❄️', pts: 2, color: '#88CCFF',
-    minSpeed: 1.5, maxSpeed: 2.5,
     // sprite: (() => { const i = new Image(); i.src = 'sprites/snowflake.png'; return i; })(),
     sprite: null,
   },
   {
     emoji: '👑', pts: 5, color: '#FFEA00',
-    minSpeed: 3.0, maxSpeed: 4.5,
     // sprite: (() => { const i = new Image(); i.src = 'sprites/crown.png'; return i; })(),
     sprite: null,
   },
 ];
 
 function spawnItem() {
-  const type = TYPES[Math.floor(Math.random() * TYPES.length)];
+  const pool = config.allTypes ? TYPES : [TYPES[0]];
+  const type = pool[Math.floor(Math.random() * pool.length)];
   const IW = 44, IH = 44;
+
+  // Speed: fallSpeed ± (random in [-1,1] × speedVariance), minimum 0.5
+  const variance = (Math.random() * 2 - 1) * config.speedVariance;
+  const speed    = Math.max(0.5, config.fallSpeed + variance);
+
   items.push({
-    x:      IW + Math.random() * (canvas.width - IW * 2),
+    x:      IW / 2 + Math.random() * (canvas.width - IW),
     y:      -IH,
     w:      IW,
     h:      IH,
@@ -230,11 +326,15 @@ function spawnItem() {
     pts:    type.pts,
     color:  type.color,
     sprite: type.sprite,
-    speed:  type.minSpeed + Math.random() * (type.maxSpeed - type.minSpeed),
+    speed,
     rot:    0,
     rotSpd: (Math.random() - 0.5) * 0.06, // gentle tumble
     gone:   false,
   });
+
+  // Ramp: softly decrease base interval (harder over time), never below 30 frames
+  baseInterval  = Math.max(30, baseInterval - 0.8);
+  spawnInterval = Math.max(30, Math.round(baseInterval + (Math.random() * 20 - 10)));
 }
 
 // ─── Particles ────────────────────────────────────────────────────────────────
@@ -245,9 +345,9 @@ function spawnBurst(cx, cy, color, count = 14) {
     particles.push({
       x: cx, y: cy,
       vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed - 2,
-      life: 1,
-      decay: 0.022 + Math.random() * 0.022,
+      vy: Math.sin(angle) * speed - 1.5,
+      life:  1,
+      decay: 0.024 + Math.random() * 0.024,
       color,
       r: 5 + Math.random() * 6,
     });
@@ -255,56 +355,55 @@ function spawnBurst(cx, cy, color, count = 14) {
 }
 
 // ─── Background elements ──────────────────────────────────────────────────────
-const STARS_BG = Array.from({ length: 60 }, () => ({
+const STARS_BG = Array.from({ length: 45 }, () => ({
   x:     Math.random() * 800,
-  y:     Math.random() * 290,
-  r:     Math.random() * 1.8 + 0.4,
+  y:     Math.random() * 220,
+  r:     Math.random() * 1.5 + 0.4,
   phase: Math.random() * Math.PI * 2,
 }));
 
 const CLOUDS = Array.from({ length: 5 }, (_, i) => ({
   x:     i * 180 + 30,
-  y:     50 + Math.random() * 80,
-  size:  30 + Math.random() * 28,
-  speed: 0.25 + Math.random() * 0.25,
+  y:     55 + Math.random() * 80,
+  size:  32 + Math.random() * 28,
+  speed: 0.35 + Math.random() * 0.3,
 }));
 
 // ─── Update ───────────────────────────────────────────────────────────────────
-// dt is normalised so 1.0 = one frame at 60 fps (16.67 ms).
-// All movement is multiplied by dt for frame-rate independence.
+// dt normalised: 1.0 = one frame at 60 fps (16.67 ms). Capped at 3.
 function update(dt) {
+  if (!config) return; // wait for difficulty selection
+
   frame++;
 
-  // Player horizontal movement
-  if (keys['ArrowLeft'] || keys['KeyA'] || touchLeft) {
+  // ── Player movement ──
+  if (keys['ArrowLeft']  || keys['KeyA'] || touchLeft) {
     player.x = Math.max(0, player.x - SPEED * dt);
   }
   if (keys['ArrowRight'] || keys['KeyD'] || touchRight) {
     player.x = Math.min(canvas.width - player.w, player.x + SPEED * dt);
   }
-
   if (player.catchAnim > 0) player.catchAnim = Math.max(0, player.catchAnim - dt);
 
-  // Move clouds
+  // ── Clouds ──
   CLOUDS.forEach(c => { c.x -= c.speed * dt; if (c.x < -150) c.x = canvas.width + 150; });
 
-  // Spawn items only after game starts
+  // ── Item spawning — only after the player's first movement ──
   if (started) {
     spawnTimer++;
     if (spawnTimer >= spawnInterval) {
-      spawnTimer    = 0;
-      spawnInterval = 55 + Math.floor(Math.random() * 75);
+      spawnTimer = 0;
       spawnItem();
     }
   }
 
-  // Move items + catch detection
+  // ── Move items + catch detection ──
   items.forEach(item => {
     item.y   += item.speed * dt;
     item.rot += item.rotSpd * dt;
     if (item.gone) return;
 
-    // Forgiving hitbox: ±10 px wider than basket, item caught when bottom enters basket zone
+    // Forgiving AABB: hitbox is ±10 px wider than the basket on each side
     const itemCx     = item.x + item.w / 2;
     const catchLeft  = player.x - 10;
     const catchRight = player.x + player.w + 10;
@@ -312,17 +411,17 @@ function update(dt) {
 
     if (itemCx >= catchLeft && itemCx <= catchRight &&
         itemBottom >= player.y && itemBottom <= player.y + player.h + 14) {
-      item.gone = true;
-      score += item.pts;
-      scoreFlash      = 30;
+      item.gone        = true;
+      score           += item.pts;
+      scoreFlash       = 28;
       player.catchAnim = 12;
-      spawnBurst(itemCx, player.y + 8, item.color, 16);
+      spawnBurst(itemCx, player.y + 8, item.color, 14);
       playCollectSound(item.pts);
     }
   });
   items = items.filter(i => !i.gone && i.y < canvas.height + 60);
 
-  // Update particles
+  // ── Particles ──
   particles.forEach(p => {
     p.x   += p.vx  * dt;
     p.y   += p.vy  * dt;
@@ -345,12 +444,10 @@ function drawEmoji(em, cx, cy, size) {
 }
 
 // Draws any entity with { x, y, w, h, emoji, sprite }.
-// Sprite image takes priority over emoji when loaded.
+// Uses drawImage when sprite is loaded; emoji otherwise.
 function drawEntity(e, scaleX = 1, scaleY = 1) {
-  const cx = e.x + e.w / 2;
-  const cy = e.y + e.h / 2;
   ctx.save();
-  ctx.translate(cx, cy);
+  ctx.translate(e.x + e.w / 2, e.y + e.h / 2);
   ctx.scale(scaleX, scaleY);
   if (e.sprite && e.sprite.complete && e.sprite.naturalWidth > 0) {
     ctx.drawImage(e.sprite, -e.w / 2, -e.h / 2, e.w, e.h);
@@ -360,7 +457,7 @@ function drawEntity(e, scaleX = 1, scaleY = 1) {
   ctx.restore();
 }
 
-// Falling items have an additional rotation component
+// Falling items carry a rotation on top of the standard entity draw.
 function drawItem(item) {
   ctx.save();
   ctx.translate(item.x + item.w / 2, item.y + item.h / 2);
@@ -375,7 +472,7 @@ function drawItem(item) {
 
 // ─── Draw ─────────────────────────────────────────────────────────────────────
 function draw() {
-  // Sky gradient
+  // Sky gradient — identical to PrincessRunner for consistent world feel
   const sky = ctx.createLinearGradient(0, 0, 0, canvas.height);
   sky.addColorStop(0,    '#0d0033');
   sky.addColorStop(0.65, '#3d0066');
@@ -383,10 +480,9 @@ function draw() {
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // Twinkling background stars
+  // Twinkling stars
   STARS_BG.forEach(s => {
-    const alpha = 0.3 + 0.7 * Math.abs(Math.sin(s.phase + frame * 0.03));
-    ctx.globalAlpha = alpha;
+    ctx.globalAlpha = 0.35 + 0.65 * Math.abs(Math.sin(s.phase + frame * 0.028));
     ctx.fillStyle   = '#ffffff';
     ctx.beginPath();
     ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
@@ -395,7 +491,7 @@ function draw() {
   ctx.globalAlpha = 1;
 
   // Soft clouds
-  ctx.fillStyle = 'rgba(255, 180, 255, 0.2)';
+  ctx.fillStyle = 'rgba(255, 180, 255, 0.22)';
   CLOUDS.forEach(c => {
     ctx.beginPath();
     ctx.arc(c.x,                     c.y,                c.size,       0, Math.PI * 2);
@@ -423,7 +519,7 @@ function draw() {
   ctx.stroke();
   ctx.restore();
 
-  // Catch-zone glow on the ground beneath the basket
+  // Catch-zone glow — radial ellipse on the ground directly below the basket
   const glowCx   = player.x + player.w / 2;
   const glowGrad = ctx.createRadialGradient(glowCx, GY, 0, glowCx, GY, player.w);
   glowGrad.addColorStop(0, 'rgba(218, 112, 214, 0.4)');
@@ -436,9 +532,8 @@ function draw() {
   // Falling items
   items.forEach(drawItem);
 
-  // Basket — pop scale on catch
-  const catchPct  = player.catchAnim / 12;
-  const popScale  = 1 + catchPct * 0.22;
+  // Basket — brief scale-pop on each catch
+  const popScale = 1 + (player.catchAnim / 12) * 0.22;
   drawEntity(player, popScale, popScale);
 
   // Particles
@@ -451,11 +546,11 @@ function draw() {
   });
   ctx.globalAlpha = 1;
 
-  // Score — bounces on collect
-  const scoreScale = scoreFlash > 0 ? 1 + (scoreFlash / 30) * 0.28 : 1;
+  // Score — bounces when collecting
+  const scale = scoreFlash > 0 ? 1 + (scoreFlash / 28) * 0.25 : 1;
   ctx.save();
   ctx.translate(56, 34);
-  ctx.scale(scoreScale, scoreScale);
+  ctx.scale(scale, scale);
   ctx.font         = 'bold 30px sans-serif';
   ctx.fillStyle    = scoreFlash > 0 ? '#FFFF88' : '#FFD700';
   ctx.textAlign    = 'center';
@@ -463,30 +558,30 @@ function draw() {
   ctx.fillText(`✨ ${score}`, 0, 0);
   ctx.restore();
 
-  // Touch hints — pulsing arrows on left and right edges, shown before start on mobile
-  if (isMobile && !started) {
+  // Touch hints — pulsing ◀ ▶ shown after difficulty pick, before first move
+  if (isMobile && config && !started) {
     const arrowAlpha = 0.4 + 0.3 * Math.sin(frame * 0.08);
     ctx.globalAlpha  = arrowAlpha;
     ctx.font         = '52px serif';
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle    = '#FFD0FF';
-    ctx.fillText('◀', 70,                    canvas.height / 2);
-    ctx.fillText('▶', canvas.width - 70,     canvas.height / 2);
+    ctx.fillText('◀', 70,                canvas.height / 2);
+    ctx.fillText('▶', canvas.width - 70, canvas.height / 2);
     ctx.globalAlpha = 1;
   }
 
-  // Start prompt — shown before first interaction
-  if (!started) {
+  // "Tap to move" prompt — shown after difficulty pick, before first movement
+  if (config && !started) {
     const pulse = 0.65 + 0.35 * Math.sin(frame * 0.07);
     ctx.globalAlpha  = pulse;
-    ctx.font         = 'bold 24px sans-serif';
+    ctx.font         = 'bold 26px sans-serif';
     ctx.fillStyle    = '#FFD0FF';
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(
-      isMobile ? 'Tryck vänster eller höger för att börja! 🌟'
-               : 'Tryck ← → för att börja! 🌟',
+      isMobile ? 'Tap left or right to start! 🌟'
+               : 'Press ← → to start! 🌟',
       canvas.width / 2, canvas.height / 2 - 10
     );
     ctx.globalAlpha = 1;
@@ -494,7 +589,7 @@ function draw() {
 }
 
 // ─── Game loop ────────────────────────────────────────────────────────────────
-// dt is capped at 3 to avoid large jumps if the tab was backgrounded.
+// dt capped at 3 to prevent giant position jumps when the tab was backgrounded.
 function loop(timestamp) {
   if (lastTime === null) lastTime = timestamp;
   const dt = Math.min((timestamp - lastTime) / 16.667, 3);

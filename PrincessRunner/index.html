@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="sv">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Prinsessans äventyr</title>
+  <title>Princess Adventure</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -13,9 +13,9 @@
       align-items: center;
       width: 100vw;
       height: 100vh;
-      height: 100dvh; /* overrides above on browsers that support it — excludes browser chrome */
+      height: 100dvh;
       overflow: hidden;
-      position: fixed; /* prevents scroll bounce on iOS */
+      position: fixed;
     }
     canvas {
       display: block;
@@ -27,7 +27,7 @@
       position: fixed;
       top: 14px;
       right: 14px;
-      z-index: 5;
+      z-index: 9;
       background: rgba(30, 0, 60, 0.75);
       border: 1px solid rgba(200, 100, 255, 0.35);
       border-radius: 50%;
@@ -42,6 +42,57 @@
       transition: background 0.15s, transform 0.15s;
     }
     #home-btn:hover { background: rgba(80, 0, 120, 0.9); transform: scale(1.1); }
+
+    /* ── Difficulty selection screen ── */
+    #diff-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(10, 0, 28, 0.78);
+      backdrop-filter: blur(3px);
+    }
+    .diff-card {
+      background: linear-gradient(155deg, rgba(52, 0, 90, 0.97), rgba(22, 0, 46, 0.97));
+      border: 2px solid rgba(210, 100, 255, 0.45);
+      border-radius: 24px;
+      padding: 30px 28px 26px;
+      text-align: center;
+      color: #f0d0ff;
+      font-family: sans-serif;
+      box-shadow: 0 0 60px rgba(140, 0, 255, 0.35), inset 0 0 32px rgba(100, 0, 180, 0.1);
+      max-width: 370px;
+      width: 90vw;
+    }
+    .diff-card h1 { font-size: 1.65rem; margin-bottom: 4px; }
+    .diff-card p  { font-size: 0.95rem; color: #b880f0; margin-bottom: 22px; }
+    .diff-btns {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .diff-btns button {
+      background: rgba(100, 0, 180, 0.55);
+      border: 2px solid rgba(210, 110, 255, 0.5);
+      border-radius: 16px;
+      color: #fff;
+      font-size: 1.1rem;
+      line-height: 1.55;
+      padding: 14px 10px;
+      min-height: 74px;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+    }
+    .diff-btns button:hover {
+      background: rgba(160, 0, 240, 0.78);
+      transform: scale(1.06);
+      box-shadow: 0 0 20px rgba(200, 80, 255, 0.45);
+    }
+    .diff-btns button:active { transform: scale(0.96); }
+
+    /* ── Portrait overlay ── */
     #rotate-overlay {
       display: none;
       position: fixed;
@@ -63,20 +114,34 @@
 <body>
 <a id="home-btn" href="../index.html" title="Back to Project Mila">🏠</a>
 <canvas id="game"></canvas>
+
+<div id="diff-screen">
+  <div class="diff-card">
+    <h1>👸 Princess Adventure</h1>
+    <p>Choose difficulty</p>
+    <div class="diff-btns">
+      <button data-d="practice">🌸<br>Practice</button>
+      <button data-d="easy">⭐<br>Easy</button>
+      <button data-d="medium">🌟<br>Medium</button>
+      <button data-d="hard">👑<br>Hard</button>
+    </div>
+  </div>
+</div>
+
 <div id="rotate-overlay">
   <div class="icon">📱↔️</div>
   <p>Rotate your device<br>to play! 👸✨</p>
 </div>
+
 <script>
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
-canvas.width = 800;
+const ctx    = canvas.getContext('2d');
+canvas.width  = 800;
 canvas.height = 450;
 
 const isMobile = window.matchMedia('(pointer: coarse)').matches;
 
-// Scale canvas to fit window while keeping proportions.
-// Uses visualViewport when available — more accurate on mobile (excludes browser chrome).
+// ─── Viewport / resize ────────────────────────────────────────────────────────
 function getViewport() {
   if (window.visualViewport) return { w: window.visualViewport.width, h: window.visualViewport.height };
   return { w: window.innerWidth, h: window.innerHeight };
@@ -95,25 +160,21 @@ function resize() {
 function checkOrientation() {
   const overlay = document.getElementById('rotate-overlay');
   const { w, h } = getViewport();
-  const showOverlay = isMobile && h > w; // portrait on mobile
-  overlay.style.display = showOverlay ? 'flex' : 'none';
+  overlay.style.display = (isMobile && h > w) ? 'flex' : 'none';
 }
 
 function onResize() { resize(); checkOrientation(); }
-
 window.addEventListener('resize', onResize);
-// orientationchange fires before dimensions update — small delay ensures correct values
 window.addEventListener('orientationchange', () => setTimeout(onResize, 120));
 if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
-
 resize();
 checkOrientation();
 
-// ─── Audio (Web Audio API — no files needed) ─────────────────────────────────
+// ─── Audio (Web Audio API — no files needed) ──────────────────────────────────
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
 function playTone(freq, type, duration, vol = 0.25, startDelay = 0) {
-  const osc = audioCtx.createOscillator();
+  const osc  = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
   osc.connect(gain);
   gain.connect(audioCtx.destination);
@@ -133,85 +194,84 @@ function playJumpSound() {
 }
 
 function playCollectSound(pts) {
-  // Nicer chord the more points the item is worth
-  const notes = [523, 659, 784, 1047]; // C5 E5 G5 C6
+  const notes = [523, 659, 784, 1047];
   const count = pts >= 5 ? 4 : pts >= 2 ? 3 : 2;
   for (let i = 0; i < count; i++) playTone(notes[i], 'sine', 0.22, 0.13, i * 0.07);
 }
 
-// ─── Layout constants ────────────────────────────────────────────────────────
-const GY = 370;          // y of ground surface
-const PW = 50, PH = 60;  // player width/height
+// Low sine that rapidly rises in pitch — classic boing
+function playBoingSound() {
+  const osc  = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.type = 'sine';
+  const t = audioCtx.currentTime;
+  osc.frequency.setValueAtTime(110, t);
+  osc.frequency.exponentialRampToValueAtTime(620, t + 0.28);
+  gain.gain.setValueAtTime(0.35, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
+  osc.start(t);
+  osc.stop(t + 0.38);
+}
 
-// ─── Physics constants ───────────────────────────────────────────────────────
+// ─── Difficulty ───────────────────────────────────────────────────────────────
+const DIFFICULTIES = {
+  practice: { scroll: 2.5, platformsAt: null, trampolinesAt: null },
+  easy:     { scroll: 2.5, platformsAt: 10,   trampolinesAt: 30  },
+  medium:   { scroll: 3.0, platformsAt: 10,   trampolinesAt: 30  },
+  hard:     { scroll: 3.5, platformsAt: 5,    trampolinesAt: 20  },
+};
+let config = null; // set when player picks a difficulty — nothing spawns before this
+
+document.querySelectorAll('#diff-screen button[data-d]').forEach(btn => {
+  btn.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    audioCtx.resume();
+    config = DIFFICULTIES[btn.dataset.d];
+    document.getElementById('diff-screen').style.display = 'none';
+  });
+});
+
+// ─── Layout constants ─────────────────────────────────────────────────────────
+const GY = 370;         // y of ground surface
+const PW = 50, PH = 60; // player width / height
+
+// ─── Physics constants ────────────────────────────────────────────────────────
 const GRAVITY    = 0.55;
-const JUMP_FORCE = -13;   // negative = upward
-const SCROLL     = 3;     // pixels per frame the world moves left
+const JUMP_FORCE = -13;  // negative = upward; max jump height ≈ 153 px
 
-// ─── Player ──────────────────────────────────────────────────────────────────
+// ─── Player ───────────────────────────────────────────────────────────────────
 const player = {
   x: 120,
-  y: GY - PH,    // y = top of sprite; feet sit at GY when grounded
+  y: GY - PH,
   vy: 0,
   w: PW,
   h: PH,
   grounded: true,
   emoji: '👸',
-
-  // ── Sprite hook ──────────────────────────────────────────────────────────
-  // To replace the emoji with an image file:
-  //   player.sprite = new Image();
-  //   player.sprite.src = 'sprites/princess.png';   // 50×60 px recommended
-  sprite: null,
+  sprite: null, // set player.sprite = new Image() to swap emoji for image
 };
 
 // ─── Game state ───────────────────────────────────────────────────────────────
-let score       = 0;
-let scoreFlash  = 0;   // frames to flash the score
-let started     = false;
-let frame       = 0;
-let lastTime    = null; // used for delta time calculation
-
-// ─── Input ────────────────────────────────────────────────────────────────────
-function triggerJump() {
-  audioCtx.resume(); // browsers block audio until user gesture
-  if (!started) started = true;
-  if (player.grounded) {
-    player.vy       = JUMP_FORCE;
-    player.grounded = false;
-    spawnBurst(player.x + player.w / 2, GY, '#CC88FF', 8);
-    playJumpSound();
-  }
-}
-
-window.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); triggerJump(); } });
-canvas.addEventListener('pointerdown', triggerJump); // touch / click fallback
+let score      = 0;
+let scoreFlash = 0;
+let started    = false; // true after first jump; gates the "tap to jump" prompt
+let frame      = 0;
+let lastTime   = null;
 
 // ─── Collectible types ────────────────────────────────────────────────────────
 const TYPES = [
-  {
-    emoji: '⭐', pts: 1, color: '#FFD700',
-    // sprite: (() => { const i = new Image(); i.src = 'sprites/star.png'; return i; })(),
-    sprite: null,
-  },
-  {
-    emoji: '❄️', pts: 2, color: '#88CCFF',
-    // sprite: (() => { const i = new Image(); i.src = 'sprites/snowflake.png'; return i; })(),
-    sprite: null,
-  },
-  {
-    emoji: '👑', pts: 5, color: '#FFD700',
-    // sprite: (() => { const i = new Image(); i.src = 'sprites/crown.png'; return i; })(),
-    sprite: null,
-  },
+  { emoji: '⭐', pts: 1, color: '#FFD700', sprite: null },
+  { emoji: '❄️', pts: 2, color: '#88CCFF', sprite: null },
+  { emoji: '👑', pts: 5, color: '#FFD700', sprite: null },
 ];
 
-// Heights collectibles spawn at (pixels above ground). Must be reachable with one jump.
-// Max jump height ≈ JUMP_FORCE² / (2 × GRAVITY) ≈ 153 px.
+// Heights collectibles spawn at (above ground). Max reachable jump ≈ 153 px.
 const HEIGHTS = [0, 70, 130];
 
-let collectibles = [];
-let spawnTimer   = 0;
+let collectibles  = [];
+let spawnTimer    = 0;
 let spawnInterval = 80;
 
 function spawnCollectible() {
@@ -230,6 +290,46 @@ function spawnCollectible() {
   });
 }
 
+// ─── Platforms & trampolines ──────────────────────────────────────────────────
+let platforms            = [];
+let platformTimer        = 0;
+let platformInterval     = 160; // frames between platform spawns
+let trampolineTimer      = 0;
+let trampolineInterval   = 270; // frames between trampoline spawns
+let platformsIntroduced  = false;
+let trampolinesIntroduced = false;
+
+// Brief "new mechanic" text that fades out
+let introText = { label: '', life: 0 };
+
+function spawnPlatform(isTrampoline) {
+  const w = 80 + Math.random() * 60;  // 80–140 px wide
+  const h = 16;
+  // y of the top surface; GY-200 (highest) to GY-60 (lowest, still above ground)
+  const y = (GY - 200) + Math.random() * 140;
+
+  const p = { x: canvas.width + 20, y, w, h, isTrampoline, sprite: null };
+  platforms.push(p);
+
+  // ~50 % chance: place a collectible 100–130 px above the platform surface.
+  // That height is reachable by jumping from the platform but not from the ground.
+  if (!isTrampoline && Math.random() < 0.5) {
+    const type = TYPES[Math.floor(Math.random() * TYPES.length)];
+    const CW = 40, CH = 40;
+    const rise = 100 + Math.random() * 30;
+    collectibles.push({
+      x: p.x + w / 2 - CW / 2,
+      y: y - rise - CH,
+      w: CW, h: CH,
+      emoji: type.emoji,
+      pts:   type.pts,
+      color: type.color,
+      sprite: type.sprite,
+      gone: false,
+    });
+  }
+}
+
 // ─── Particles ────────────────────────────────────────────────────────────────
 let particles = [];
 
@@ -241,7 +341,7 @@ function spawnBurst(cx, cy, color, count = 12) {
       x: cx, y: cy,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed - 1.5,
-      life: 1,
+      life:  1,
       decay: 0.024 + Math.random() * 0.024,
       color,
       r: 5 + Math.random() * 6,
@@ -249,57 +349,139 @@ function spawnBurst(cx, cy, color, count = 12) {
   }
 }
 
+// ─── Input ────────────────────────────────────────────────────────────────────
+function triggerJump() {
+  if (!config) return;          // difficulty not yet chosen
+  audioCtx.resume();
+  if (!started) started = true; // hide the "tap to jump" prompt
+  if (player.grounded) {
+    player.vy       = JUMP_FORCE;
+    player.grounded = false;
+    spawnBurst(player.x + player.w / 2, player.y + player.h, '#CC88FF', 8);
+    playJumpSound();
+  }
+}
+
+window.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); triggerJump(); } });
+canvas.addEventListener('pointerdown', triggerJump);
+
 // ─── Background elements ──────────────────────────────────────────────────────
 const STARS = Array.from({ length: 45 }, () => ({
-  x: Math.random() * 800,
-  y: Math.random() * 220,
-  r: Math.random() * 1.5 + 0.4,
+  x:     Math.random() * 800,
+  y:     Math.random() * 220,
+  r:     Math.random() * 1.5 + 0.4,
   phase: Math.random() * Math.PI * 2,
 }));
 
 const CLOUDS = Array.from({ length: 5 }, (_, i) => ({
-  x: i * 180 + 30,
-  y: 55 + Math.random() * 80,
-  size: 32 + Math.random() * 28,
+  x:     i * 180 + 30,
+  y:     55 + Math.random() * 80,
+  size:  32 + Math.random() * 28,
   speed: 0.35 + Math.random() * 0.3,
 }));
 
 // ─── Update ───────────────────────────────────────────────────────────────────
-// dt is normalised so that 1.0 = one frame at 60 fps (16.67 ms).
-// All position/velocity changes are multiplied by dt so the game runs at
-// the same apparent speed regardless of device frame rate.
+// dt is normalised: 1.0 = one frame at 60 fps. All motion multiplied by dt.
 function update(dt) {
+  if (!config) return; // wait for difficulty selection
+
   frame++;
 
-  // Player gravity
+  // ── Player physics ──
+  // Save y before movement for one-way platform crossing detection.
+  const prevY = player.y;
+
   if (!player.grounded) {
     player.vy += GRAVITY * dt;
-    player.y  += player.vy * dt;
-    if (player.y >= GY - player.h) {
-      player.y    = GY - player.h;
-      player.vy   = 0;
-      player.grounded = true;
-    }
+  }
+  player.y += player.vy * dt;
+
+  // Reset grounded each frame; collision checks below will re-set it.
+  player.grounded = false;
+
+  // Ground collision
+  if (player.y >= GY - player.h) {
+    player.y        = GY - player.h;
+    player.vy       = 0;
+    player.grounded = true;
   }
 
-  // Move clouds
+  // One-way platform / trampoline collision.
+  // A collision is detected when the player's feet cross the platform's top
+  // surface downward this frame (prevFeet ≤ platform.y, currFeet ≥ platform.y).
+  const prevFeet = prevY        + player.h;
+  const currFeet = player.y     + player.h;
+
+  platforms.forEach(p => {
+    const hOverlap = player.x + player.w > p.x + 2 && player.x < p.x + p.w - 2;
+    if (hOverlap && currFeet >= p.y && prevFeet <= p.y + 1) {
+      if (p.isTrampoline) {
+        player.y        = p.y - player.h;
+        player.vy       = JUMP_FORCE * 1.8; // big bounce
+        player.grounded = false;
+        spawnBurst(player.x + player.w / 2, p.y, '#FF69B4', 26);
+        playBoingSound();
+      } else {
+        player.y        = p.y - player.h;
+        player.vy       = 0;
+        player.grounded = true;
+      }
+    }
+  });
+
+  // ── Clouds ──
   CLOUDS.forEach(c => { c.x -= c.speed * dt; if (c.x < -150) c.x = canvas.width + 150; });
 
-  // Spawn collectibles only after the game starts
-  if (started) {
-    spawnTimer++;
-    if (spawnTimer >= spawnInterval) {
-      spawnTimer    = 0;
-      spawnInterval = 55 + Math.floor(Math.random() * 75);
-      spawnCollectible();
+  // ── Unlock flags based on score ──
+  const canPlatforms   = config.platformsAt   !== null && score >= config.platformsAt;
+  const canTrampolines = config.trampolinesAt  !== null && score >= config.trampolinesAt;
+
+  // ── Collectible spawning ──
+  spawnTimer++;
+  if (spawnTimer >= spawnInterval) {
+    spawnTimer    = 0;
+    spawnInterval = 55 + Math.floor(Math.random() * 75);
+    spawnCollectible();
+  }
+
+  // ── Platform spawning ──
+  if (canPlatforms) {
+    if (!platformsIntroduced) {
+      platformsIntroduced = true;
+      spawnBurst(canvas.width / 2, canvas.height / 2, '#CC88FF', 36);
+      introText = { label: '✨ Platforms!', life: 150 };
+    }
+    platformTimer++;
+    if (platformTimer >= platformInterval) {
+      platformTimer    = 0;
+      platformInterval = 150 + Math.floor(Math.random() * 130);
+      spawnPlatform(false);
     }
   }
 
-  // Move collectibles + collision
+  // ── Trampoline spawning ──
+  if (canTrampolines) {
+    if (!trampolinesIntroduced) {
+      trampolinesIntroduced = true;
+      spawnBurst(canvas.width / 2, canvas.height / 2, '#FF69B4', 40);
+      introText = { label: '🌀 Trampolines!', life: 150 };
+    }
+    trampolineTimer++;
+    if (trampolineTimer >= trampolineInterval) {
+      trampolineTimer    = 0;
+      trampolineInterval = 240 + Math.floor(Math.random() * 180);
+      spawnPlatform(true);
+    }
+  }
+
+  // ── Move platforms ──
+  platforms.forEach(p => { p.x -= config.scroll * dt; });
+  platforms = platforms.filter(p => p.x > -200);
+
+  // ── Move collectibles + collision ──
   collectibles.forEach(c => {
-    c.x -= SCROLL * dt;
+    c.x -= config.scroll * dt;
     if (c.gone) return;
-    // Slightly forgiving hitbox (shrink 8 px per side)
     const px = player.x + 8, pw = player.w - 16;
     const py = player.y + 8, ph = player.h - 16;
     if (px < c.x + c.w && px + pw > c.x && py < c.y + c.h && py + ph > c.y) {
@@ -312,7 +494,7 @@ function update(dt) {
   });
   collectibles = collectibles.filter(c => !c.gone && c.x > -60);
 
-  // Update particles
+  // ── Particles ──
   particles.forEach(p => {
     p.x   += p.vx  * dt;
     p.y   += p.vy  * dt;
@@ -321,21 +503,22 @@ function update(dt) {
   });
   particles = particles.filter(p => p.life > 0);
 
-  if (scoreFlash > 0) scoreFlash--;
+  if (scoreFlash  > 0) scoreFlash--;
+  if (introText.life > 0) introText.life--;
 }
 
 // ─── Draw helpers ─────────────────────────────────────────────────────────────
 function drawEmoji(em, cx, cy, size) {
   ctx.save();
-  ctx.font = `${size}px serif`;
+  ctx.font         = `${size}px serif`;
   ctx.textAlign    = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(em, cx, cy);
   ctx.restore();
 }
 
-// Draws any entity that has { x, y, w, h, emoji, sprite }.
-// When sprite is set and loaded → uses drawImage; otherwise falls back to emoji.
+// Draws any entity with { x, y, w, h, emoji, sprite }.
+// Uses drawImage when sprite is loaded, emoji otherwise.
 function drawEntity(e) {
   if (e.sprite && e.sprite.complete && e.sprite.naturalWidth > 0) {
     ctx.drawImage(e.sprite, e.x, e.y, e.w, e.h);
@@ -344,20 +527,45 @@ function drawEntity(e) {
   }
 }
 
+function drawPlatform(p) {
+  const bodyColor = p.isTrampoline ? '#E8559A' : '#9933CC';
+  const hilite    = p.isTrampoline ? '#FFB6D9' : '#BB66EE';
+  const glowColor = p.isTrampoline ? '#FF1493' : '#CC44FF';
+
+  ctx.save();
+  ctx.shadowColor = glowColor;
+  ctx.shadowBlur  = 12;
+  ctx.fillStyle   = bodyColor;
+  ctx.beginPath();
+  ctx.roundRect(p.x, p.y, p.w, p.h, 5);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Top highlight strip
+  ctx.fillStyle = hilite;
+  ctx.beginPath();
+  ctx.roundRect(p.x + 3, p.y + 2, p.w - 6, 5, 2);
+  ctx.fill();
+  ctx.restore();
+
+  if (p.isTrampoline) {
+    drawEmoji('🌀', p.x + p.w / 2, p.y + p.h / 2 + 1, p.h * 1.7);
+  }
+}
+
 // ─── Draw ─────────────────────────────────────────────────────────────────────
 function draw() {
   // Sky gradient
   const sky = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  sky.addColorStop(0,   '#0d0033');
-  sky.addColorStop(0.65,'#3d0066');
-  sky.addColorStop(1,   '#7B2D8B');
+  sky.addColorStop(0,    '#0d0033');
+  sky.addColorStop(0.65, '#3d0066');
+  sky.addColorStop(1,    '#7B2D8B');
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   // Twinkling stars
   STARS.forEach(s => {
-    const alpha = 0.35 + 0.65 * Math.abs(Math.sin(s.phase + frame * 0.028));
-    ctx.globalAlpha = alpha;
+    ctx.globalAlpha = 0.35 + 0.65 * Math.abs(Math.sin(s.phase + frame * 0.028));
     ctx.fillStyle   = '#ffffff';
     ctx.beginPath();
     ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
@@ -369,9 +577,9 @@ function draw() {
   ctx.fillStyle = 'rgba(255, 180, 255, 0.22)';
   CLOUDS.forEach(c => {
     ctx.beginPath();
-    ctx.arc(c.x,                      c.y,                c.size,       0, Math.PI * 2);
-    ctx.arc(c.x + c.size * 0.65,  c.y - c.size * 0.28,  c.size * 0.65, 0, Math.PI * 2);
-    ctx.arc(c.x - c.size * 0.65,  c.y - c.size * 0.18,  c.size * 0.55, 0, Math.PI * 2);
+    ctx.arc(c.x,                     c.y,                c.size,        0, Math.PI * 2);
+    ctx.arc(c.x + c.size * 0.65, c.y - c.size * 0.28,  c.size * 0.65,  0, Math.PI * 2);
+    ctx.arc(c.x - c.size * 0.65, c.y - c.size * 0.18,  c.size * 0.55,  0, Math.PI * 2);
     ctx.fill();
   });
 
@@ -394,6 +602,9 @@ function draw() {
   ctx.stroke();
   ctx.restore();
 
+  // Platforms (drawn behind player and collectibles)
+  platforms.forEach(drawPlatform);
+
   // Collectibles
   collectibles.forEach(drawEntity);
 
@@ -410,35 +621,52 @@ function draw() {
   });
   ctx.globalAlpha = 1;
 
-  // Score (bounces slightly when you collect something)
+  // Score (bounces when collecting)
   const scale = scoreFlash > 0 ? 1 + (scoreFlash / 28) * 0.25 : 1;
   ctx.save();
   ctx.translate(56, 34);
   ctx.scale(scale, scale);
-  ctx.font      = 'bold 30px sans-serif';
-  ctx.fillStyle = scoreFlash > 0 ? '#FFFF88' : '#FFD700';
+  ctx.font         = 'bold 30px sans-serif';
+  ctx.fillStyle    = scoreFlash > 0 ? '#FFFF88' : '#FFD700';
   ctx.textAlign    = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(`✨ ${score}`, 0, 0);
   ctx.restore();
 
-  // "Press space" prompt before game starts
-  if (!started) {
+  // "Tap to jump" prompt — shown after difficulty picked, before first jump
+  if (config && !started) {
     const pulse = 0.65 + 0.35 * Math.sin(frame * 0.07);
-    ctx.globalAlpha = pulse;
-    ctx.font      = 'bold 26px sans-serif';
-    ctx.fillStyle = '#FFD0FF';
+    ctx.globalAlpha  = pulse;
+    ctx.font         = 'bold 26px sans-serif';
+    ctx.fillStyle    = '#FFD0FF';
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(isMobile ? 'Tryck var som helst för att hoppa! 🌟'
-                          : 'Tryck MELLANSLAG för att hoppa! 🌟', canvas.width / 2, canvas.height / 2 - 10);
+    ctx.fillText(
+      isMobile ? 'Tap anywhere to jump! 🌟'
+               : 'Press SPACE to jump! 🌟',
+      canvas.width / 2, canvas.height / 2 - 10
+    );
     ctx.globalAlpha = 1;
+  }
+
+  // Intro text for new mechanics — fades out over ~2.5 s
+  if (introText.life > 0) {
+    const alpha = Math.min(1, introText.life / 40);
+    ctx.save();
+    ctx.globalAlpha  = alpha;
+    ctx.font         = 'bold 36px sans-serif';
+    ctx.fillStyle    = '#FFD700';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor  = '#FF80FF';
+    ctx.shadowBlur   = 22;
+    ctx.fillText(introText.label, canvas.width / 2, canvas.height / 2 - 70);
+    ctx.restore();
   }
 }
 
 // ─── Game loop ────────────────────────────────────────────────────────────────
-// timestamp is provided by requestAnimationFrame (milliseconds since page load).
-// dt is capped at 3 to prevent a huge position jump if the tab was backgrounded.
+// dt capped at 3 to prevent giant jumps when the tab is backgrounded.
 function loop(timestamp) {
   if (lastTime === null) lastTime = timestamp;
   const dt = Math.min((timestamp - lastTime) / 16.667, 3);
