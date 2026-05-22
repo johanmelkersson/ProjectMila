@@ -170,6 +170,7 @@ let score       = 0;
 let scoreFlash  = 0;   // frames to flash the score
 let started     = false;
 let frame       = 0;
+let lastTime    = null; // used for delta time calculation
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 function triggerJump() {
@@ -264,13 +265,16 @@ const CLOUDS = Array.from({ length: 5 }, (_, i) => ({
 }));
 
 // ─── Update ───────────────────────────────────────────────────────────────────
-function update() {
+// dt is normalised so that 1.0 = one frame at 60 fps (16.67 ms).
+// All position/velocity changes are multiplied by dt so the game runs at
+// the same apparent speed regardless of device frame rate.
+function update(dt) {
   frame++;
 
   // Player gravity
   if (!player.grounded) {
-    player.vy += GRAVITY;
-    player.y  += player.vy;
+    player.vy += GRAVITY * dt;
+    player.y  += player.vy * dt;
     if (player.y >= GY - player.h) {
       player.y    = GY - player.h;
       player.vy   = 0;
@@ -279,7 +283,7 @@ function update() {
   }
 
   // Move clouds
-  CLOUDS.forEach(c => { c.x -= c.speed; if (c.x < -150) c.x = canvas.width + 150; });
+  CLOUDS.forEach(c => { c.x -= c.speed * dt; if (c.x < -150) c.x = canvas.width + 150; });
 
   // Spawn collectibles only after the game starts
   if (started) {
@@ -293,7 +297,7 @@ function update() {
 
   // Move collectibles + collision
   collectibles.forEach(c => {
-    c.x -= SCROLL;
+    c.x -= SCROLL * dt;
     if (c.gone) return;
     // Slightly forgiving hitbox (shrink 8 px per side)
     const px = player.x + 8, pw = player.w - 16;
@@ -310,10 +314,10 @@ function update() {
 
   // Update particles
   particles.forEach(p => {
-    p.x   += p.vx;
-    p.y   += p.vy;
-    p.vy  += 0.14;
-    p.life -= p.decay;
+    p.x   += p.vx  * dt;
+    p.y   += p.vy  * dt;
+    p.vy  += 0.14  * dt;
+    p.life -= p.decay * dt;
   });
   particles = particles.filter(p => p.life > 0);
 
@@ -433,13 +437,18 @@ function draw() {
 }
 
 // ─── Game loop ────────────────────────────────────────────────────────────────
-function loop() {
-  update();
+// timestamp is provided by requestAnimationFrame (milliseconds since page load).
+// dt is capped at 3 to prevent a huge position jump if the tab was backgrounded.
+function loop(timestamp) {
+  if (lastTime === null) lastTime = timestamp;
+  const dt = Math.min((timestamp - lastTime) / 16.667, 3);
+  lastTime = timestamp;
+  update(dt);
   draw();
   requestAnimationFrame(loop);
 }
 
-loop();
+requestAnimationFrame(loop);
 </script>
 </body>
 </html>
