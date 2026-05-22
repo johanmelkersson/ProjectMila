@@ -11,8 +11,11 @@
       display: flex;
       justify-content: center;
       align-items: center;
+      width: 100vw;
       height: 100vh;
+      height: 100dvh; /* overrides above on browsers that support it — excludes browser chrome */
       overflow: hidden;
+      position: fixed; /* prevents scroll bounce on iOS */
     }
     canvas {
       display: block;
@@ -20,27 +23,91 @@
       box-shadow: 0 0 50px rgba(180, 50, 255, 0.4);
       touch-action: none;
     }
+    #home-btn {
+      position: fixed;
+      top: 14px;
+      right: 14px;
+      z-index: 5;
+      background: rgba(30, 0, 60, 0.75);
+      border: 1px solid rgba(200, 100, 255, 0.35);
+      border-radius: 50%;
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      text-decoration: none;
+      backdrop-filter: blur(4px);
+      transition: background 0.15s, transform 0.15s;
+    }
+    #home-btn:hover { background: rgba(80, 0, 120, 0.9); transform: scale(1.1); }
+    #rotate-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #0d0033;
+      z-index: 10;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      color: #f0d0ff;
+      font-family: sans-serif;
+      text-align: center;
+    }
+    #rotate-overlay .icon { font-size: 3.5rem; }
+    #rotate-overlay p { font-size: 1.3rem; line-height: 1.6; }
   </style>
 </head>
 <body>
+<a id="home-btn" href="../index.html" title="Back to Project Mila">🏠</a>
 <canvas id="game"></canvas>
+<div id="rotate-overlay">
+  <div class="icon">📱↔️</div>
+  <p>Rotate your device<br>to play! 👸✨</p>
+</div>
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 canvas.width = 800;
 canvas.height = 450;
 
-// Scale canvas to fit window while keeping proportions
+const isMobile = window.matchMedia('(pointer: coarse)').matches;
+
+// Scale canvas to fit window while keeping proportions.
+// Uses visualViewport when available — more accurate on mobile (excludes browser chrome).
+function getViewport() {
+  if (window.visualViewport) return { w: window.visualViewport.width, h: window.visualViewport.height };
+  return { w: window.innerWidth, h: window.innerHeight };
+}
+
 function resize() {
+  const { w: vw, h: vh } = getViewport();
   const aspect = canvas.width / canvas.height;
-  let w = window.innerWidth * 0.96;
+  let w = vw * 0.96;
   let h = w / aspect;
-  if (h > window.innerHeight * 0.96) { h = window.innerHeight * 0.96; w = h * aspect; }
-  canvas.style.width = w + 'px';
+  if (h > vh * 0.96) { h = vh * 0.96; w = h * aspect; }
+  canvas.style.width  = w + 'px';
   canvas.style.height = h + 'px';
 }
+
+function checkOrientation() {
+  const overlay = document.getElementById('rotate-overlay');
+  const { w, h } = getViewport();
+  const showOverlay = isMobile && h > w; // portrait on mobile
+  overlay.style.display = showOverlay ? 'flex' : 'none';
+}
+
+function onResize() { resize(); checkOrientation(); }
+
+window.addEventListener('resize', onResize);
+// orientationchange fires before dimensions update — small delay ensures correct values
+window.addEventListener('orientationchange', () => setTimeout(onResize, 120));
+if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
+
 resize();
-window.addEventListener('resize', resize);
+checkOrientation();
 
 // ─── Audio (Web Audio API — no files needed) ─────────────────────────────────
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -71,8 +138,6 @@ function playCollectSound(pts) {
   const count = pts >= 5 ? 4 : pts >= 2 ? 3 : 2;
   for (let i = 0; i < count; i++) playTone(notes[i], 'sine', 0.22, 0.13, i * 0.07);
 }
-
-const isMobile = window.matchMedia('(pointer: coarse)').matches;
 
 // ─── Layout constants ────────────────────────────────────────────────────────
 const GY = 370;          // y of ground surface
