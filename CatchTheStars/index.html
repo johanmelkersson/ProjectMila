@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fånga Stjärnorna</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0d0020;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100vw;
+      height: 100vh;
+      height: 100dvh;
+      overflow: hidden;
+      position: fixed;
+    }
+    canvas {
+      display: block;
+      border-radius: 16px;
+      box-shadow: 0 0 50px rgba(180, 50, 255, 0.4);
+      touch-action: none;
+    }
+    #home-btn {
+      position: fixed;
+      top: 14px;
+      right: 14px;
+      z-index: 5;
+      background: rgba(30, 0, 60, 0.75);
+      border: 1px solid rgba(200, 100, 255, 0.35);
+      border-radius: 50%;
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      text-decoration: none;
+      backdrop-filter: blur(4px);
+      transition: background 0.15s, transform 0.15s;
+    }
+    #home-btn:hover { background: rgba(80, 0, 120, 0.9); transform: scale(1.1); }
+    #rotate-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #0d0033;
+      z-index: 10;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      color: #f0d0ff;
+      font-family: sans-serif;
+      text-align: center;
+    }
+    #rotate-overlay .icon { font-size: 3.5rem; }
+    #rotate-overlay p { font-size: 1.3rem; line-height: 1.6; }
+  </style>
+</head>
+<body>
+<a id="home-btn" href="../index.html" title="Back to Project Mila">🏠</a>
+<canvas id="game"></canvas>
+<div id="rotate-overlay">
+  <div class="icon">📱↔️</div>
+  <p>Rotate your device<br>to play! ⭐✨</p>
+</div>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+canvas.width  = 800;
+canvas.height = 450;
+
+const isMobile = window.matchMedia('(pointer: coarse)').matches;
+
+function getViewport() {
+  if (window.visualViewport) return { w: window.visualViewport.width, h: window.visualViewport.height };
+  return { w: window.innerWidth, h: window.innerHeight };
+}
+
+function resize() {
+  const { w: vw, h: vh } = getViewport();
+  const aspect = canvas.width / canvas.height;
+  let w = vw * 0.96;
+  let h = w / aspect;
+  if (h > vh * 0.96) { h = vh * 0.96; w = h * aspect; }
+  canvas.style.width  = w + 'px';
+  canvas.style.height = h + 'px';
+}
+
+function checkOrientation() {
+  const overlay = document.getElementById('rotate-overlay');
+  const { w, h } = getViewport();
+  overlay.style.display = (isMobile && h > w) ? 'flex' : 'none';
+}
+
+function onResize() { resize(); checkOrientation(); }
+
+window.addEventListener('resize', onResize);
+window.addEventListener('orientationchange', () => setTimeout(onResize, 120));
+if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
+
+resize();
+checkOrientation();
+
+// ─── Audio (Web Audio API — no files needed) ─────────────────────────────────
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function playTone(freq, type, duration, vol = 0.25, startDelay = 0) {
+  const osc  = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.type = type;
+  const t = audioCtx.currentTime + startDelay;
+  osc.frequency.setValueAtTime(freq, t);
+  osc.frequency.exponentialRampToValueAtTime(freq * 0.6, t + duration);
+  gain.gain.setValueAtTime(vol, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
+  osc.start(t);
+  osc.stop(t + duration);
+}
+
+function playCollectSound(pts) {
+  const notes = [523, 659, 784, 1047]; // C5 E5 G5 C6
+  const count = pts >= 5 ? 4 : pts >= 2 ? 3 : 2;
+  for (let i = 0; i < count; i++) playTone(notes[i], 'sine', 0.22, 0.13, i * 0.07);
+}
+
+// ─── Layout constants ────────────────────────────────────────────────────────
+const GY = 400;           // y of ground / basket resting surface
+const PW = 75, PH = 55;   // basket width / height
+const SPEED = 6;          // px per frame at 60 fps
+
+// ─── Player (basket) ─────────────────────────────────────────────────────────
+const player = {
+  x: canvas.width / 2 - PW / 2,
+  y: GY - PH,
+  w: PW,
+  h: PH,
+  emoji: '🧺',
+  catchAnim: 0,   // frames remaining of catch-pop animation
+
+  // ── Sprite hook ──────────────────────────────────────────────────────────
+  // player.sprite = new Image();
+  // player.sprite.src = 'sprites/basket.png'; // 75×55 px recommended
+  sprite: null,
+};
+
+// ─── Game state ───────────────────────────────────────────────────────────────
+let score         = 0;
+let scoreFlash    = 0;
+let started       = false;
+let frame         = 0;
+let lastTime      = null;
+let items         = [];
+let particles     = [];
+let spawnTimer    = 0;
+let spawnInterval = 90; // frames between spawns
+
+// ─── Input ────────────────────────────────────────────────────────────────────
+const keys = {};
+
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (!started && (e.code === 'ArrowLeft' || e.code === 'ArrowRight' ||
+                   e.code === 'KeyA'      || e.code === 'KeyD')) {
+    audioCtx.resume();
+    started = true;
+  }
+});
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+// Multi-touch pointer tracking: each pointer maps to 'left' or 'right'
+const activePointers = new Map();
+let touchLeft = false, touchRight = false;
+
+function updateTouchDirs() {
+  touchLeft = touchRight = false;
+  activePointers.forEach(side => {
+    if (side === 'left')  touchLeft  = true;
+    if (side === 'right') touchRight = true;
+  });
+}
+
+canvas.addEventListener('pointerdown', e => {
+  const rect = canvas.getBoundingClientRect();
+  const cx   = (e.clientX - rect.left) / rect.width * canvas.width;
+  activePointers.set(e.pointerId, cx < canvas.width / 2 ? 'left' : 'right');
+  updateTouchDirs();
+  audioCtx.resume();
+  if (!started) started = true;
+});
+canvas.addEventListener('pointerup',     e => { activePointers.delete(e.pointerId); updateTouchDirs(); });
+canvas.addEventListener('pointercancel', e => { activePointers.delete(e.pointerId); updateTouchDirs(); });
+
+// ─── Collectible types ────────────────────────────────────────────────────────
+const TYPES = [
+  {
+    emoji: '⭐', pts: 1, color: '#FFD700',
+    minSpeed: 2.0, maxSpeed: 3.5,
+    // sprite: (() => { const i = new Image(); i.src = 'sprites/star.png'; return i; })(),
+    sprite: null,
+  },
+  {
+    emoji: '❄️', pts: 2, color: '#88CCFF',
+    minSpeed: 1.5, maxSpeed: 2.5,
+    // sprite: (() => { const i = new Image(); i.src = 'sprites/snowflake.png'; return i; })(),
+    sprite: null,
+  },
+  {
+    emoji: '👑', pts: 5, color: '#FFEA00',
+    minSpeed: 3.0, maxSpeed: 4.5,
+    // sprite: (() => { const i = new Image(); i.src = 'sprites/crown.png'; return i; })(),
+    sprite: null,
+  },
+];
+
+function spawnItem() {
+  const type = TYPES[Math.floor(Math.random() * TYPES.length)];
+  const IW = 44, IH = 44;
+  items.push({
+    x:      IW + Math.random() * (canvas.width - IW * 2),
+    y:      -IH,
+    w:      IW,
+    h:      IH,
+    emoji:  type.emoji,
+    pts:    type.pts,
+    color:  type.color,
+    sprite: type.sprite,
+    speed:  type.minSpeed + Math.random() * (type.maxSpeed - type.minSpeed),
+    rot:    0,
+    rotSpd: (Math.random() - 0.5) * 0.06, // gentle tumble
+    gone:   false,
+  });
+}
+
+// ─── Particles ────────────────────────────────────────────────────────────────
+function spawnBurst(cx, cy, color, count = 14) {
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2 + Math.random() * 0.4;
+    const speed = 2 + Math.random() * 4;
+    particles.push({
+      x: cx, y: cy,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 2,
+      life: 1,
+      decay: 0.022 + Math.random() * 0.022,
+      color,
+      r: 5 + Math.random() * 6,
+    });
+  }
+}
+
+// ─── Background elements ──────────────────────────────────────────────────────
+const STARS_BG = Array.from({ length: 60 }, () => ({
+  x:     Math.random() * 800,
+  y:     Math.random() * 290,
+  r:     Math.random() * 1.8 + 0.4,
+  phase: Math.random() * Math.PI * 2,
+}));
+
+const CLOUDS = Array.from({ length: 5 }, (_, i) => ({
+  x:     i * 180 + 30,
+  y:     50 + Math.random() * 80,
+  size:  30 + Math.random() * 28,
+  speed: 0.25 + Math.random() * 0.25,
+}));
+
+// ─── Update ───────────────────────────────────────────────────────────────────
+// dt is normalised so 1.0 = one frame at 60 fps (16.67 ms).
+// All movement is multiplied by dt for frame-rate independence.
+function update(dt) {
+  frame++;
+
+  // Player horizontal movement
+  if (keys['ArrowLeft'] || keys['KeyA'] || touchLeft) {
+    player.x = Math.max(0, player.x - SPEED * dt);
+  }
+  if (keys['ArrowRight'] || keys['KeyD'] || touchRight) {
+    player.x = Math.min(canvas.width - player.w, player.x + SPEED * dt);
+  }
+
+  if (player.catchAnim > 0) player.catchAnim = Math.max(0, player.catchAnim - dt);
+
+  // Move clouds
+  CLOUDS.forEach(c => { c.x -= c.speed * dt; if (c.x < -150) c.x = canvas.width + 150; });
+
+  // Spawn items only after game starts
+  if (started) {
+    spawnTimer++;
+    if (spawnTimer >= spawnInterval) {
+      spawnTimer    = 0;
+      spawnInterval = 55 + Math.floor(Math.random() * 75);
+      spawnItem();
+    }
+  }
+
+  // Move items + catch detection
+  items.forEach(item => {
+    item.y   += item.speed * dt;
+    item.rot += item.rotSpd * dt;
+    if (item.gone) return;
+
+    // Forgiving hitbox: ±10 px wider than basket, item caught when bottom enters basket zone
+    const itemCx     = item.x + item.w / 2;
+    const catchLeft  = player.x - 10;
+    const catchRight = player.x + player.w + 10;
+    const itemBottom = item.y + item.h;
+
+    if (itemCx >= catchLeft && itemCx <= catchRight &&
+        itemBottom >= player.y && itemBottom <= player.y + player.h + 14) {
+      item.gone = true;
+      score += item.pts;
+      scoreFlash      = 30;
+      player.catchAnim = 12;
+      spawnBurst(itemCx, player.y + 8, item.color, 16);
+      playCollectSound(item.pts);
+    }
+  });
+  items = items.filter(i => !i.gone && i.y < canvas.height + 60);
+
+  // Update particles
+  particles.forEach(p => {
+    p.x   += p.vx  * dt;
+    p.y   += p.vy  * dt;
+    p.vy  += 0.14  * dt;
+    p.life -= p.decay * dt;
+  });
+  particles = particles.filter(p => p.life > 0);
+
+  if (scoreFlash > 0) scoreFlash--;
+}
+
+// ─── Draw helpers ─────────────────────────────────────────────────────────────
+function drawEmoji(em, cx, cy, size) {
+  ctx.save();
+  ctx.font         = `${size}px serif`;
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(em, cx, cy);
+  ctx.restore();
+}
+
+// Draws any entity with { x, y, w, h, emoji, sprite }.
+// Sprite image takes priority over emoji when loaded.
+function drawEntity(e, scaleX = 1, scaleY = 1) {
+  const cx = e.x + e.w / 2;
+  const cy = e.y + e.h / 2;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(scaleX, scaleY);
+  if (e.sprite && e.sprite.complete && e.sprite.naturalWidth > 0) {
+    ctx.drawImage(e.sprite, -e.w / 2, -e.h / 2, e.w, e.h);
+  } else {
+    drawEmoji(e.emoji, 0, 0, e.w * 0.85);
+  }
+  ctx.restore();
+}
+
+// Falling items have an additional rotation component
+function drawItem(item) {
+  ctx.save();
+  ctx.translate(item.x + item.w / 2, item.y + item.h / 2);
+  ctx.rotate(item.rot);
+  if (item.sprite && item.sprite.complete && item.sprite.naturalWidth > 0) {
+    ctx.drawImage(item.sprite, -item.w / 2, -item.h / 2, item.w, item.h);
+  } else {
+    drawEmoji(item.emoji, 0, 0, item.w * 0.88);
+  }
+  ctx.restore();
+}
+
+// ─── Draw ─────────────────────────────────────────────────────────────────────
+function draw() {
+  // Sky gradient
+  const sky = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  sky.addColorStop(0,    '#0d0033');
+  sky.addColorStop(0.65, '#3d0066');
+  sky.addColorStop(1,    '#7B2D8B');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Twinkling background stars
+  STARS_BG.forEach(s => {
+    const alpha = 0.3 + 0.7 * Math.abs(Math.sin(s.phase + frame * 0.03));
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle   = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  // Soft clouds
+  ctx.fillStyle = 'rgba(255, 180, 255, 0.2)';
+  CLOUDS.forEach(c => {
+    ctx.beginPath();
+    ctx.arc(c.x,                     c.y,                c.size,       0, Math.PI * 2);
+    ctx.arc(c.x + c.size * 0.65, c.y - c.size * 0.28, c.size * 0.65, 0, Math.PI * 2);
+    ctx.arc(c.x - c.size * 0.65, c.y - c.size * 0.18, c.size * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Ground fill
+  const gGrad = ctx.createLinearGradient(0, GY, 0, canvas.height);
+  gGrad.addColorStop(0, '#8B2FC9');
+  gGrad.addColorStop(1, '#2d0044');
+  ctx.fillStyle = gGrad;
+  ctx.fillRect(0, GY, canvas.width, canvas.height - GY);
+
+  // Ground shimmer line
+  ctx.save();
+  ctx.strokeStyle = '#DA70D6';
+  ctx.lineWidth   = 2.5;
+  ctx.shadowColor = '#FF80FF';
+  ctx.shadowBlur  = 10;
+  ctx.beginPath();
+  ctx.moveTo(0, GY);
+  ctx.lineTo(canvas.width, GY);
+  ctx.stroke();
+  ctx.restore();
+
+  // Catch-zone glow on the ground beneath the basket
+  const glowCx   = player.x + player.w / 2;
+  const glowGrad = ctx.createRadialGradient(glowCx, GY, 0, glowCx, GY, player.w);
+  glowGrad.addColorStop(0, 'rgba(218, 112, 214, 0.4)');
+  glowGrad.addColorStop(1, 'rgba(218, 112, 214, 0)');
+  ctx.fillStyle = glowGrad;
+  ctx.beginPath();
+  ctx.ellipse(glowCx, GY, player.w, 14, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Falling items
+  items.forEach(drawItem);
+
+  // Basket — pop scale on catch
+  const catchPct  = player.catchAnim / 12;
+  const popScale  = 1 + catchPct * 0.22;
+  drawEntity(player, popScale, popScale);
+
+  // Particles
+  particles.forEach(p => {
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle   = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  // Score — bounces on collect
+  const scoreScale = scoreFlash > 0 ? 1 + (scoreFlash / 30) * 0.28 : 1;
+  ctx.save();
+  ctx.translate(56, 34);
+  ctx.scale(scoreScale, scoreScale);
+  ctx.font         = 'bold 30px sans-serif';
+  ctx.fillStyle    = scoreFlash > 0 ? '#FFFF88' : '#FFD700';
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`✨ ${score}`, 0, 0);
+  ctx.restore();
+
+  // Touch hints — pulsing arrows on left and right edges, shown before start on mobile
+  if (isMobile && !started) {
+    const arrowAlpha = 0.4 + 0.3 * Math.sin(frame * 0.08);
+    ctx.globalAlpha  = arrowAlpha;
+    ctx.font         = '52px serif';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle    = '#FFD0FF';
+    ctx.fillText('◀', 70,                    canvas.height / 2);
+    ctx.fillText('▶', canvas.width - 70,     canvas.height / 2);
+    ctx.globalAlpha = 1;
+  }
+
+  // Start prompt — shown before first interaction
+  if (!started) {
+    const pulse = 0.65 + 0.35 * Math.sin(frame * 0.07);
+    ctx.globalAlpha  = pulse;
+    ctx.font         = 'bold 24px sans-serif';
+    ctx.fillStyle    = '#FFD0FF';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(
+      isMobile ? 'Tryck vänster eller höger för att börja! 🌟'
+               : 'Tryck ← → för att börja! 🌟',
+      canvas.width / 2, canvas.height / 2 - 10
+    );
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ─── Game loop ────────────────────────────────────────────────────────────────
+// dt is capped at 3 to avoid large jumps if the tab was backgrounded.
+function loop(timestamp) {
+  if (lastTime === null) lastTime = timestamp;
+  const dt = Math.min((timestamp - lastTime) / 16.667, 3);
+  lastTime = timestamp;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
